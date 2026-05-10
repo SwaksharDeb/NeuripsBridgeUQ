@@ -44,7 +44,6 @@ Common flags:
 | `NUM_DIFFUSION_STEPS` | 7 | discretization of the bridge SDE |
 | `NUM_RUNS` | 100 | number of UQ samples per subject |
 | `--num_train_samples` | 100 | N i.i.d. trajectories per inner iter (mean-of-loss MC estimator) |
-| `GAMMA` | 5e-5 | likelihood temperature in `p(I|v) ∝ exp(−E(v)/γ)` |
 | `GUIDANCE_SCALE` | 1.0 | strength of the energy-gradient correction in the reverse SDE |
 | `LAMBDA_SCALE` / `ALPHA_SCALE` | 3 / 1e-4 | inverse-Gamma prior on σ |
 
