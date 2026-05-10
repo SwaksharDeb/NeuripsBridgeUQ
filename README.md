@@ -6,7 +6,7 @@ Plug-and-play module for any pretrained registration backbone to quantify aleato
 
 ## Our Approach
 
-![MFD-V2D Architecture](figures/overall_fig.png)
+![MFD-V2D Architecture](figures/overall_fig.jpg)
 
 ## Directory contents
 
