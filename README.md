@@ -4,10 +4,9 @@ Plug-and-play module for any pretrained registration backbone to quantify aleato
 
 ---
 
-## Our Approach: MFD-V2V
+## Our Approach
 
-[Overall Figure PDF](figures/overall_fig.pdf)
-
+[Download PDF Figure](https://raw.githubusercontent.com/SwaksharDeb/NeuripsBridgeUQ/main/figures/overall_fig.pdf)
 
 ## Directory contents
 
