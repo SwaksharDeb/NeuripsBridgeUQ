@@ -4,19 +4,6 @@ Plug-and-play module for any pretrained registration backbone to quantify aleato
 
 ---
 
-## What it does
-
-Given a pretrained registration network `R` that maps a sequence `I = {I_t}` to a sequence of deterministic velocity fields `v̂ = {v̂_t}`, BridgeUQ produces:
-
-- **`u_t`** — a per-voxel, per-frame uncertainty map (aleatoric uncertainty over the deformation trajectory).
-- 
----
-
-## Method (one-paragraph version)
-
-
----
-
 ## Directory contents
 
 | File | Purpose |
