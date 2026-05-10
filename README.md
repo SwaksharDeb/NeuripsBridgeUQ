@@ -1,8 +1,6 @@
 # BridgeUQ: Bayesian Aleatoric Uncertainty Quantification For Time-Series Medical Image Registration via Brownian Bridge Prior
 
-Aleatoric uncertainty quantification for **deformable brain registration** on longitudinal MRI sequences. Plug-and-play module for any pretrained registration backbone — no retraining required.
-
-This directory implements the brain pipeline of *BridgeUQ: Hierarchical Gaussian Process Brownian Bridge for Spatiotemporal Registration Uncertainty* (NeurIPS 2026). The cardiac counterpart lives in `../uncertainty_sde_combined_acdc_v3/`; both share the same algorithm and trainer.
+Plug-and-play module for any pretrained registration backbone to quantify aleatoric uncertainty for time series medical images.
 
 ---
 
