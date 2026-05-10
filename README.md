@@ -41,11 +41,8 @@ Common flags:
 | Name | Default | Meaning |
 |------|---------|---------|
 | `INNER_ITERATIONS` | 1000 | K test-time training iterations per minibatch |
-| `NUM_DIFFUSION_STEPS` | 7 | discretization of the bridge SDE |
 | `NUM_RUNS` | 100 | number of UQ samples per subject |
-| `--num_train_samples` | 100 | N i.i.d. trajectories per inner iter (mean-of-loss MC estimator) |
-| `GUIDANCE_SCALE` | 1.0 | strength of the energy-gradient correction in the reverse SDE |
-| `LAMBDA_SCALE` / `ALPHA_SCALE` | 3 / 1e-4 | inverse-Gamma prior on σ |
+| `LAMBDA` / `ALPHA` | 3 / 1e-4 | inverse-Gamma prior on σ |
 
 ---
 
