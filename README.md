@@ -1,4 +1,4 @@
-# BridgeUQ — Brain (longitudinal MRI)
+# BridgeUQ: Bayesian Aleatoric Uncertainty Quantification For Time-Series Medical Image Registration via Brownian Bridge Prior
 
 Aleatoric uncertainty quantification for **deformable brain registration** on longitudinal MRI sequences. Plug-and-play module for any pretrained registration backbone — no retraining required.
 
