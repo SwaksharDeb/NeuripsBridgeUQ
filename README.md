@@ -8,12 +8,12 @@ Plug-and-play module for any pretrained registration backbone to quantify aleato
 
 | File | Purpose |
 |------|---------|
-| `main.py` | Entry point. Loads precomputed velocities for the chosen backbone, runs K-iteration test-time training per minibatch, persists `s^K`, draws `NUM_RUNS` samples per minibatch for UQ, writes per-batch + run-level aggregates. |
+| `main.py` | Contain the uncertainty estimatio code for the BridgeUQ. Given the backbone, this compute the uncertainty. |
 | `trainer.py` | Contain code for the variance learning. |
 | `brownian_bridge.py` | Contain code realated to Brownian-bridge. |
-| `networks.py` | `Variance learning network'. |
-| `losses.py` | `Contain code for the optimization objective. |
-| `warping.py` | Velocity-field warping via `grid_sample`. |
+| `networks.py` | Variance learning network. |
+| `losses.py` | Contain code for the optimization objective. |
+| `warping.py` | Velocity-field warping via grid_sample. |
 | `visualization.py` | Contain visualization code. |
 
 ---
