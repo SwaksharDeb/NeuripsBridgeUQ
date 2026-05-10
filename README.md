@@ -32,7 +32,7 @@ Common flags:
 --num_train_samples INT                  N reverse-SDE trajectories per inner iter (default: 100)
 --loss {mse,ncc,ssim,...}                similarity term inside the energy
 --mixed_precision / --no_mixed_precision fp16 autocast for activations (SDE coeffs stay fp32)
---dataset {mni88,full}                   For ADNI 
+--dataset {mni88,full}                   
 ```
 
 
