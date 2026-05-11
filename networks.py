@@ -46,7 +46,7 @@ class ScalingFactorNetwork(nn.Module):
     Architecture: projection-add fusion  ->  U-Net encoder-decoder
     """
 
-    def __init__(self, num_time_steps, img_size=128, num_heads=8, proj_dim=32):
+    def __init__(self, num_time_steps, img_size=64, num_heads=8, proj_dim=32):
         super().__init__()
 
         self.num_time_steps = num_time_steps
@@ -74,6 +74,9 @@ class ScalingFactorNetwork(nn.Module):
             ConvBlock(ndims, proj_dim, proj_dim),
         )
 
+        # Instance normalization on each branch before fusion
+        # Ensures both modalities contribute at similar magnitude,
+        # preserving spatial patterns while preventing one from dominating
         self.img_norm = nn.InstanceNorm2d(proj_dim)
         self.vel_norm = nn.InstanceNorm2d(proj_dim)
         self.vel_cur_norm = nn.InstanceNorm2d(proj_dim)

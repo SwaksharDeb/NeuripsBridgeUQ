@@ -26,8 +26,8 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 
-from uncertainty_brain_sde_v3.warping import warp_image_with_velocity
-from uncertainty_brain_sde_v3.losses import Grad
+from BridgeUQ.warping import warp_image_with_velocity
+from BridgeUQ.losses import Grad
 
 
 class BrownianBridgeLearnedScaling:
@@ -36,7 +36,7 @@ class BrownianBridgeLearnedScaling:
     and posterior reverse SDE support.
     """
 
-    def __init__(self, num_diffusion_steps=1000, img_size=128, reg_weight=0.1):
+    def __init__(self, num_diffusion_steps=1000, img_size=64, reg_weight=0.1):
         self.T = num_diffusion_steps
         self.m = torch.linspace(0, 1, self.T + 1)
         self.img_size = img_size
@@ -234,7 +234,7 @@ class BrownianBridgeLearnedScaling:
                 # clamped to [1e-4, 1e4] so sigma_sq can hit ~1.4e-5 (fp16
                 # subnormal) and delta_t ~1e-6 — fp16 division in `score` would
                 # underflow. Coefficients stay fp32; the additive update at the
-                # bottom inherits v_t's dtype via explicit casts below.
+                # bottom inherits v_t's dtype via promotion.
                 s_current = self.interpolate_scaling_factors(scaling_factors, cardiac_idx_current).float()
                 sigma_sq = 2.0 * s_current / self.T
                 sigma = torch.sqrt(torch.clamp(sigma_sq, min=1e-10))

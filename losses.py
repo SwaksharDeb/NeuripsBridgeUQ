@@ -113,6 +113,9 @@ class NCC:
 
         cc = cross * cross / (I_var * J_var + 1e-5)
 
+        # Return 1 - mean(cc) so the loss is non-negative (matches the
+        # convention of other similarity terms in this module). Behaviorally
+        # identical to -mean(cc) up to a constant offset.
         return 1.0 - torch.mean(cc)
 
 
