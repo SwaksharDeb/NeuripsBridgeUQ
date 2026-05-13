@@ -21,7 +21,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
-from BridgeUQ.warping import warp_image_with_velocity
+from uncertainty_brain_sde_v3.warping import warp_image_with_velocity
 
 
 class _NullContext:
@@ -40,7 +40,7 @@ class ScalingFactorTrainer:
     """
 
     def __init__(self, scaling_network, brownian_bridge, loss_fn,
-                 lr=1e-4, device='cuda', img_size=64,
+                 lr=1e-4, device='cuda', img_size=128,
                  gamma=1.0, guidance_scale=1.0,
                  use_amp=False):
         # scaling_network may be None when only compute_brownian_bridge_velocities
@@ -153,14 +153,14 @@ class ScalingFactorTrainer:
 
         Stacks every input N times along the batch dim (effective batch =
         N*B), then makes ONE SDE call. Each reverse step's
-        `torch.randn_like(v_t)` then draws N*B independent Gaussians, which
-        is statistically identical to N i.i.d. trajectories per original
-        sample. The output is reshaped back to [N, B, ...] and averaged
-        along the N axis.
+        ``torch.randn_like(v_t)`` then draws N*B independent Gaussians,
+        which is statistically identical to N i.i.d. trajectories per
+        original sample. The output is reshaped back to ``[N, B, ...]`` and
+        averaged along the N axis.
 
         Eliminates the Python for-loop over samples and lets the GPU
-        saturate larger kernels — typically 2-5x faster than the loop
-        variant. Total memory is unchanged (same total tensors retained
+        saturate larger kernels — typically 2-5x faster than a per-sample
+        loop. Total memory is roughly the same (same total tensors retained
         for backward).
 
         Returns:
@@ -178,10 +178,6 @@ class ScalingFactorTrainer:
 
         B = v_reg_list[0].shape[0]
 
-        # Repeat each input N times along the batch dim. `repeat` is
-        # autograd-aware, so gradients from the [N*B, ...] graph fold back
-        # into the original [B, ...] tensor by summing over the repeated
-        # axis — exactly what we want for v_bar = mean over N.
         def _rep(t):
             return t.repeat(N, *([1] * (t.dim() - 1)))
 
@@ -198,9 +194,8 @@ class ScalingFactorTrainer:
         v_bar_list = []
         u_list = []
         for v_NB in v_t_list_NB:
-            # v_NB: [N*B, 2, H, W] -> [N, B, 2, H, W]
             v_view = v_NB.view(N, B, *v_NB.shape[1:])
-            v_bar = v_view.mean(dim=0)                          # gradient-attached
+            v_bar = v_view.mean(dim=0)
             with torch.no_grad():
                 centered = v_view.detach() - v_bar.detach().unsqueeze(0)
                 u = (centered ** 2).mean(dim=0).clamp_min(0.0).sqrt()
@@ -212,8 +207,8 @@ class ScalingFactorTrainer:
     def _marginal_std_from_scaling(self, scaling_factors_bb, num_frames):
         """
         Analytical bridge marginal std at each cardiac frame from the current
-        scaling factors. Mirrors lines 115-125 of compute_brownian_bridge_velocities
-        but avoids re-running the SDE.
+        scaling factors. Mirrors the std logic inside
+        ``compute_brownian_bridge_velocities`` but avoids re-running the SDE.
         """
         out = []
         last_idx = scaling_factors_bb.shape[1] - 1
@@ -229,8 +224,8 @@ class ScalingFactorTrainer:
 
     def _predict_scaling_factors(self, source_img, target_imgs, v_reg_list, v_current_list=None):
         """
-        Predict scaling factors from images, registered velocity, and (optional)
-        current velocity v^k. If v_current_list is None, v_current = v_reg.
+        Predict scaling factors from BOTH images AND velocity fields,
+        plus the current iterate v^k for the third projection branch.
         """
         # Exclude t=0 (zero velocity) -- network sees only the T registration velocities
         v_reg_no_t0 = v_reg_list[1:]  # List of T tensors [B, 2, H, W]
@@ -252,9 +247,10 @@ class ScalingFactorTrainer:
 
         return scaling_factors_raw, scaling_factors, scaling_factors_bb
 
-    def train_step(self, source_img, target_imgs, v_reg_list, inner_iterations=400,
+    def train_step(self, source_img, target_imgs, v_reg_list,
+                   inner_iterations=2000,
                    num_train_samples=1,
-                   vis_save_path=None, vis_subject_idx=0, vis_interval=1):
+                   vis_save_path=None, vis_subject_idx=None, vis_interval=50):
         """
         Iterative MLE training: for k in range(K), predict scaling using
         (images, v_reg, v_current^k), draw N posterior reverse-SDE trajectories,
@@ -264,29 +260,23 @@ class ScalingFactorTrainer:
         With num_train_samples=1 the loop collapses to a single trajectory
         (matches v2 behavior exactly).
 
-        If vis_save_path is provided, save training visualization (target/warped/
-        velocities/scaling/std_tilde/diff) every vis_interval iterations into that
-        directory as `training_vis_iter{k:04d}.png`.
-
-        Returns:
-            (last_loss_dict, scaling_factors_bb)
-            where scaling_factors_bb is s^K (detached) from the final iteration.
+        Returns (last_loss_dict, scaling_factors_bb.detach()) so callers can
+        run UQ on the same minibatch under no-graph conditions.
         """
         self.scaling_network.train()
         bb = self.brownian_bridge
         num_cardiac_frames = len(v_reg_list)
 
-        # Initialize v_current = v_reg (detached, no grad).
+        # v^0 = v^r (detached, no grad)
         v_current_list = [v.clone().detach() for v in v_reg_list]
-
         last_loss_dict = None
         scaling_factors_bb = None
 
-        inner_pbar = tqdm(range(inner_iterations), desc="  inner iters",
-                          leave=False, position=1)
         amp_ctx = (torch.cuda.amp.autocast(enabled=self.use_amp)
                    if self.use_amp else _NullContext())
 
+        inner_pbar = tqdm(range(inner_iterations), desc="  inner iters",
+                          leave=False, position=1)
         for k in inner_pbar:
             self.optimizer.zero_grad()
 
@@ -299,12 +289,32 @@ class ScalingFactorTrainer:
 
                 # delta_tilde at each cardiac frame
                 delta_tilde_per_frame = {}
-                for frame_idx in range(1, num_cardiac_frames - 1):
-                    t_diffusion = int(round(frame_idx * bb.T / (num_cardiac_frames - 1)))
-                    s_t = bb.interpolate_scaling_factors(scaling_factors_bb, frame_idx)
-                    s_t_minus_1 = bb.interpolate_scaling_factors(scaling_factors_bb, frame_idx - 1)
-                    _, _, _, delta_tilde = bb.compute_coefficients(t_diffusion, s_t, s_t_minus_1)
-                    delta_tilde_per_frame[frame_idx] = delta_tilde
+                for fi in range(1, num_cardiac_frames - 1):
+                    t_diff = int(round(fi * bb.T / (num_cardiac_frames - 1)))
+                    s_t    = bb.interpolate_scaling_factors(scaling_factors_bb, fi)
+                    s_prev = bb.interpolate_scaling_factors(scaling_factors_bb, fi - 1)
+                    _, _, _, delta_tilde = bb.compute_coefficients(t_diff, s_t, s_prev)
+                    delta_tilde_per_frame[fi] = delta_tilde
+
+                if k >= 1:
+                    warped_imgs_NB = [self.warp_image(source_img_NB, v_t) for v_t in v_t_list_NB]
+                    total_loss, loss_dict = self.loss_fn.compute_loss(
+                        source_img_NB, target_imgs_NB,
+                        warped_imgs_NB[1:], v_t_list_NB[1:], sf_NB,
+                        delta_tilde_per_frame=delta_tilde_NB,
+                        v_t_list=v_t_list_NB, v_reg_list=v_reg_NB,
+                        num_cardiac_frames=num_cardiac_frames,
+                    )
+                #if self.use_amp:
+                    self.scaler.scale(total_loss).backward()
+                    self.scaler.unscale_(self.optimizer)
+                    torch.nn.utils.clip_grad_norm_(self.scaling_network.parameters(), max_norm=1.0)
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+                # else:
+                #     total_loss.backward()
+                #     torch.nn.utils.clip_grad_norm_(self.scaling_network.parameters(), max_norm=1.0)
+                #     self.optimizer.step()
 
                 # Sample N posterior reverse-SDE trajectories and compute the
                 # MEAN-OF-LOSS estimator of E_{v ~ p_σ}[L_one(v, σ)] (paper
@@ -315,9 +325,7 @@ class ScalingFactorTrainer:
                 # compute_loss naturally average v-dependent terms over the
                 # N samples, while σ-only terms (inv_gamma_prior) are
                 # invariant under tiling — together this is the unbiased
-                # MC estimator of the expected loss. Preserves the Jensen
-                # gap that drives σ to anatomical structure (the loss-of-
-                # mean variant collapses σ to a uniform shape as N grows).
+                # MC estimator of the expected loss.
                 #
                 # N=1 keeps the simple non-tiled path (no extra repeat).
                 if num_train_samples <= 1:
@@ -357,15 +365,16 @@ class ScalingFactorTrainer:
                         v_reg_NB, sf_bb_NB,
                         source_img=source_img_NB, target_imgs=target_imgs_NB,
                     )
+                    #v_t_list_NB_prev = v_t_list_NB
 
-                    warped_imgs_NB = [self.warp_image(source_img_NB, v_t) for v_t in v_t_list_NB]
-                    total_loss, loss_dict = self.loss_fn.compute_loss(
-                        source_img_NB, target_imgs_NB,
-                        warped_imgs_NB[1:], v_t_list_NB[1:], sf_NB,
-                        delta_tilde_per_frame=delta_tilde_NB,
-                        v_t_list=v_t_list_NB, v_reg_list=v_reg_NB,
-                        num_cardiac_frames=num_cardiac_frames,
-                    )
+                    # warped_imgs_NB = [self.warp_image(source_img_NB, v_t) for v_t in v_t_list_NB]
+                    # total_loss, loss_dict = self.loss_fn.compute_loss(
+                    #     source_img_NB, target_imgs_NB,
+                    #     warped_imgs_NB[1:], v_t_list_NB[1:], sf_NB,
+                    #     delta_tilde_per_frame=delta_tilde_NB,
+                    #     v_t_list=v_t_list_NB, v_reg_list=v_reg_NB,
+                    #     num_cardiac_frames=num_cardiac_frames,
+                    # )
 
                     # Reshape [N*B, ...] -> [N, B, ...] for v_bar / u (used
                     # for v_current^{r+1} and the uncertainty map). Detached
@@ -391,38 +400,38 @@ class ScalingFactorTrainer:
                         warped_imgs = [self.warp_image(source_img, v_t) for v_t in v_bar_list]
                     v_t_list = v_bar_list
 
-            if self.use_amp:
-                self.scaler.scale(total_loss).backward()
-                self.scaler.unscale_(self.optimizer)
-                torch.nn.utils.clip_grad_norm_(self.scaling_network.parameters(), max_norm=1.0)
-                self.scaler.step(self.optimizer)
-                self.scaler.update()
-            else:
-                total_loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.scaling_network.parameters(), max_norm=1.0)
-                self.optimizer.step()
+            # if self.use_amp:
+            #     self.scaler.scale(total_loss).backward()
+            #     self.scaler.unscale_(self.optimizer)
+            #     torch.nn.utils.clip_grad_norm_(self.scaling_network.parameters(), max_norm=1.0)
+            #     self.scaler.step(self.optimizer)
+            #     self.scaler.update()
+            # else:
+            #     total_loss.backward()
+            #     torch.nn.utils.clip_grad_norm_(self.scaling_network.parameters(), max_norm=1.0)
+            #     self.optimizer.step()
 
             # v_current^{k+1} = v_perturbed.detach() for next iteration
             # (When num_train_samples > 1, v_t_list holds the per-frame mean
             # v_bar; matches Algorithm 1 line 7: v^{r+1} <- {v_bar_t}.)
             v_current_list = [v.detach() for v in v_t_list]
 
-            loss_dict['total'] = total_loss.item()
-            if u_train_list is not None:
-                loss_dict['mean_u'] = float(
-                    torch.stack([u.mean() for u in u_train_list]).mean().item()
-                )
-            last_loss_dict = loss_dict
+            if k >=1:
+                loss_dict['total'] = total_loss.item()
+                if u_train_list is not None:
+                    loss_dict['mean_u'] = float(
+                        torch.stack([u.mean() for u in u_train_list]).mean().item()
+                    )
+                last_loss_dict = loss_dict
 
-            inner_pbar.set_postfix({
-                'loss': f"{loss_dict['total']:.4f}",
-                'sim': f"{loss_dict['similarity']:.4f}",
-                'bn': f"{loss_dict.get('bridge_norm', 0):.4f}",
-                'inv_gamma': f"{loss_dict['inv_gamma_prior']:.4f}",
-                'lr': f"{self.get_lr():.2e}",
-            })
+                inner_pbar.set_postfix({
+                    'loss': f"{loss_dict['total']:.4f}",
+                    'sim': f"{loss_dict['similarity']:.4f}",
+                    'bn': f"{loss_dict.get('bridge_norm', 0):.4f}",
+                    'inv_gamma': f"{loss_dict['inv_gamma_prior']:.4f}",
+                    'lr': f"{self.get_lr():.2e}",
+                })
 
-            # Per-iteration training visualization (optional)
             if vis_save_path is not None and (k % vis_interval == 0
                                               or k == inner_iterations - 1):
                 self.visualize_training_step(
@@ -561,3 +570,4 @@ class ScalingFactorTrainer:
             )
 
         self.scaling_network.train()
+
